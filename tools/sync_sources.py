@@ -26,20 +26,13 @@ MAP = {
     ("SPS", "DJSystem", "Controls", "TopBar"): "StarterPlayerScripts/DJSystem/Controls/TopBar.client.lua",
     ("SPS", "DJSystem", "Controls", "QPyroControlPanel"): "StarterPlayerScripts/DJSystem/Controls/QPyroControlPanel.client.lua",
     ("SPS", "DJSystem", "Controls", "DJControlLock"): "StarterPlayerScripts/DJSystem/Controls/DJControlLock.client.lua",
-    ("SPS", "DJSystem", "Music", "NotifHandler"): "StarterPlayerScripts/DJSystem/Music/NotifHandler.client.lua",
+    ("SPS", "DJSystem", "Music", "MusicUI"): "StarterPlayerScripts/DJSystem/Music/MusicUI.client.lua",
+    ("RS", "DJSystem", "Modules", "MusicPlaylist"): "ReplicatedStorage/DJSystem/Modules/MusicPlaylist.lua",
     ("SGUI", "GLightsControlPanel", "GLightsControlScript"): "StarterGui/GLightsControlPanel/GLightsControlScript.client.lua",
     ("Ws", "QPyro", "Q-Tech Premium", "MainFolder", "MainScript"): "Workspace/QPyro/Q-Tech Premium/MainFolder/MainScript.server.lua",
     ("Ws", "GLights", "GlobalSettings"): "Workspace/GLights/GlobalSettings.lua",
 }
-# MusikGui-তে একই নামের দুটো MusicClient আছে (একটা Disabled), তাই referent দিয়ে আলাদা করা
-mg = [c for c in root.find("Item").findall("Item") if name(c) == "SGUI"][0]
-mg = [c for c in mg.findall("Item") if name(c) == "MusikGui"][0]
-clients = [c for c in mg.findall("Item") if name(c) == "MusicClient"]
-assert len(clients) == 2
 REFS = {ref(p): rel for p, rel in MAP.items()}
-for c in clients:
-    disabled = any(p.get("name") == "Disabled" and p.text == "true" for p in c.find("Properties"))
-    REFS[c.get("referent")] = "StarterGui/MusikGui/MusicClient (Disabled).client.lua" if disabled else "StarterGui/MusikGui/MusicClient.client.lua"
 
 OPEN = '<ProtectedString name="Source"><![CDATA['
 CLOSE = ']]></ProtectedString>'

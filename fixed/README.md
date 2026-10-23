@@ -97,3 +97,39 @@ AdminModule.ADMIN_LIST = {
 5. নিজের অ্যাকাউন্টে Play দিয়ে ঢুকলে টিভি আর প্যানেল কাজ করবে।
 
 Output-এ লাল error এলে কপি করে পাঠান।
+
+---
+
+## নতুন মিউজিক সিস্টেম (ISSUES.md #6)
+
+পুরনো মিউজিক সিস্টেমের জায়গায় নতুন সিস্টেম। পুরো UI স্ক্রিপ্টই বানায়,
+আর দরকারি RemoteEvent-গুলো সার্ভার স্ক্রিপ্ট নিজেই বানিয়ে নেয়।
+
+### যোগ / বদল করতে হবে (৩টা স্ক্রিপ্ট)
+
+| ফাইল | Studio-তে কোথায় | কী করবেন |
+|---|---|---|
+| `ReplicatedStorage/DJSystem/Modules/MusicPlaylist.lua` | ReplicatedStorage › DJSystem › Modules › **MusicPlaylist** | নতুন **ModuleScript** বানান |
+| `ServerScriptService/DJSystem/Music/MusicServer.server.lua` | ServerScriptService › DJSystem › Music › **MusicServer** | ভেতরের লেখা বদলে দিন |
+| `StarterPlayerScripts/DJSystem/Music/MusicUI.client.lua` | StarterPlayer › StarterPlayerScripts › DJSystem › Music › **MusicUI** | নতুন **LocalScript** বানান |
+
+### মুছে ফেলুন (পুরনো মিউজিক সিস্টেম)
+
+- StarterGui › **MusikGui** (পুরো ScreenGui, ভেতরের Topbar আর MusicClient সহ)
+- StarterPlayer › StarterPlayerScripts › DJSystem › Music › **NotifHandler**
+- ReplicatedStorage › DJSystem › Remotes › **MusicRemotes** (পুরো ফোল্ডার)
+- Workspace › MusicFolder-এর ভেতরের ৪টা পুরনো **Sound** (এদের আইডি এখন MusicPlaylist-এ আছে)
+
+**মুছবেন না:** Workspace › **MusicFolder** Part নিজে (গান এখানেই বাজে, আর লাইট/আগুন
+এখান থেকেই বিট ধরে), আর **music Play Button**-এর **MusicPrompt** (এটা দিয়েই প্যানেল খোলে)।
+
+### গান যোগ করা
+
+ReplicatedStorage › DJSystem › Modules › **MusicPlaylist** খুলে `DJ` বা `Phonk`-এর
+ভেতরে লাইন যোগ করুন:
+
+```lua
+{ Name = "গানের নাম", Id = 1234567890 },
+```
+
+একই ফাইলের `Settings`-এ কিউর লিমিট, ভোট-স্কিপ চালু/বন্ধ আর শুরুর ভলিউম বদলানো যায়।

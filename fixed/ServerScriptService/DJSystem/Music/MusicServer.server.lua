@@ -1,584 +1,351 @@
+--[[
+	MusicServer — জায়গা: ServerScriptService > DJSystem > Music > MusicServer (Script)
+
+	নতুন মিউজিক সিস্টেম (ISSUES.md #6)
+	  - গান আসে ReplicatedStorage > DJSystem > Modules > MusicPlaylist থেকে
+	    (DJ আর Phonk দুটো সেকশন)। DataStore-এ গান যোগ করার ব্যবস্থা নেই।
+	  - কিউ: কিছু না বাজলে গান সাথে সাথে বাজে, নাহলে কিউতে যায়।
+	    একজন সর্বোচ্চ Settings.MaxSongsPerPlayer-টা গান রাখতে পারে।
+	  - ভলিউম আর ইকুয়ালাইজার শুধু অ্যাডমিন (AdminModule)।
+	  - স্কিপ: অ্যাডমিন চাপলে সাথে সাথে, অন্যরা ভোট দিয়ে (Settings.AllowVoteSkip)।
+	  - গান বাজে workspace.MusicFolder-এর "DJSound"-এ, আগের মতোই। লাইট আর
+	    আগুনের সিঙ্ক এই সাউন্ড থেকেই বিট ধরে।
+	  - দরকারি RemoteEvent-গুলো এই স্ক্রিপ্ট নিজেই বানায়
+	    (ReplicatedStorage > DJSystem > Remotes > Music), হাতে বানাতে হয় না।
+]]
+
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local DataStoreService = game:GetService("DataStoreService")
-local MarketplaceService = game:GetService("MarketplaceService")
-local MessagingService = game:GetService("MessagingService")
+local Workspace = game:GetService("Workspace")
 
--- Remote Folder & Events Setup
-local musicRemotes = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("MusicRemotes")
+local djSystem = ReplicatedStorage:WaitForChild("DJSystem")
+local modules = djSystem:WaitForChild("Modules")
+local AdminModule = require(modules:WaitForChild("AdminModule"))
+local Playlist = require(modules:WaitForChild("MusicPlaylist"))
+local Settings = Playlist.Settings or {}
 
-local playMusicRemote = musicRemotes:WaitForChild("PlayMusic")
-local stopMusicRemote = musicRemotes:WaitForChild("StopMusic")
-local setVolumeRemote = musicRemotes:WaitForChild("SetVolume")
-local getMusicStateRemote = musicRemotes:WaitForChild("GetMusicState")
-local skipVoteRemote = musicRemotes:WaitForChild("SkipVote")
-local skipVoteUpdateRemote = musicRemotes:WaitForChild("SkipVoteUpdate")
-local addCustomMusicRemote = musicRemotes:WaitForChild("AddCustomMusic")
-local setEqualizerRemote = musicRemotes:WaitForChild("SetEqualizer")
-local getEqualizerStateRemote = musicRemotes:WaitForChild("GetEqualizerState")
-local starRemote = musicRemotes:WaitForChild("StarMusic")
+local CATEGORIES = { "DJ", "Phonk" }
+local MAX_SONGS_PER_PLAYER = Settings.MaxSongsPerPlayer or 2
+local ALLOW_VOTE_SKIP = Settings.AllowVoteSkip ~= false
+local VOTE_SKIP_PERCENT = Settings.VoteSkipPercent or 0.5
+local LOAD_TIMEOUT = 10 -- এত সেকেন্ডে গান লোড না হলে পরের গান
+local REQUEST_COOLDOWN = 0.5
+local EQ_MIN, EQ_MAX = -60, 10
 
-local musicModule = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Modules", 10)
-local AdminModule = musicModule and musicModule:FindFirstChild("AdminModule") and require(musicModule.AdminModule)
-local NotificationModule = musicModule and musicModule:FindFirstChild("NotificationModule") and require(musicModule.NotificationModule)
-
-local musicFolder = Workspace:WaitForChild("MusicFolder")
-
--- Dynamic DJ Sound Object Setup
-local currentSoundObject = musicFolder:FindFirstChild("DJSound")
-if not currentSoundObject then
-	currentSoundObject = Instance.new("Sound")
-	currentSoundObject.Name = "DJSound"
-	currentSoundObject.RollOffMinDistance = 10
-	currentSoundObject.RollOffMaxDistance = 150
-	currentSoundObject.RollOffMode = Enum.RollOffMode.Inverse
-	currentSoundObject.Parent = musicFolder
+---------------------------------------------------------------------
+-- RemoteEvent / RemoteFunction (না থাকলে বানানো হয়)
+---------------------------------------------------------------------
+local remotesFolder = djSystem:WaitForChild("Remotes")
+local musicRemotes = remotesFolder:FindFirstChild("Music")
+if not musicRemotes then
+	musicRemotes = Instance.new("Folder")
+	musicRemotes.Name = "Music"
+	musicRemotes.Parent = remotesFolder
 end
 
--- Equalizer Sound Effect Setup (ইকুয়ালাইজার কাজ করার জন্য)
-local equalizerEffect = currentSoundObject:FindFirstChild("EqualizerEffect")
+local function getRemote(className, name)
+	local remote = musicRemotes:FindFirstChild(name)
+	if not remote then
+		remote = Instance.new(className)
+		remote.Name = name
+		remote.Parent = musicRemotes
+	end
+	return remote
+end
+
+local GetState = getRemote("RemoteFunction", "GetState")
+local RequestSong = getRemote("RemoteEvent", "RequestSong")
+local SkipSong = getRemote("RemoteEvent", "SkipSong")
+local SetVolume = getRemote("RemoteEvent", "SetVolume")
+local SetEqualizer = getRemote("RemoteEvent", "SetEqualizer")
+local StateChanged = getRemote("RemoteEvent", "StateChanged")
+local Notify = getRemote("RemoteEvent", "Notify")
+
+---------------------------------------------------------------------
+-- গানের লিস্ট: songs[category][id] = { Name, Id }
+---------------------------------------------------------------------
+local songs = {}
+for _, category in ipairs(CATEGORIES) do
+	songs[category] = {}
+	for index, song in ipairs(Playlist[category] or {}) do
+		if type(song) == "table" and type(song.Id) == "number" and type(song.Name) == "string" then
+			songs[category][song.Id] = { Name = song.Name, Id = song.Id }
+		else
+			warn(`[Music] MusicPlaylist.{category}[{index}] ঠিকমতো লেখা হয়নি, বাদ দেওয়া হলো`)
+		end
+	end
+end
+
+---------------------------------------------------------------------
+-- DJSound (আগের মতো MusicFolder-এর ভেতরে, 3D সাউন্ড)
+---------------------------------------------------------------------
+local musicFolder = Workspace:WaitForChild("MusicFolder")
+local sound = musicFolder:FindFirstChild("DJSound")
+if not sound then
+	sound = Instance.new("Sound")
+	sound.Name = "DJSound"
+	sound.RollOffMinDistance = 10
+	sound.RollOffMaxDistance = 150
+	sound.RollOffMode = Enum.RollOffMode.Inverse
+	sound.Parent = musicFolder
+end
+sound.Looped = false
+
+local equalizerEffect = sound:FindFirstChildOfClass("EqualizerSoundEffect")
 if not equalizerEffect then
 	equalizerEffect = Instance.new("EqualizerSoundEffect")
 	equalizerEffect.Name = "EqualizerEffect"
-	equalizerEffect.Parent = currentSoundObject
+	equalizerEffect.Parent = sound
 end
 
-local currentSoundName = nil
-local globalVolume = 0.5
-local isPlaying = false
-local songQueue = {}
-local skipVotes = {}
-local MAX_SONGS_PER_PLAYER = 2
+---------------------------------------------------------------------
+-- অবস্থা
+---------------------------------------------------------------------
+local current = nil -- { Name, Id, Category, RequestedBy, UserId }
+local queue = {}
+local volume = math.clamp(Settings.DefaultVolume or 0.5, 0, 1)
+local equalizer = { Low = 0, Mid = 0, High = 0 }
+local skipVotes = {} -- [userId] = true
+local playToken = 0
+local lastRequest = {} -- [player] = os.clock()
 
--- ============================================================
--- CUSTOM SONG SYSTEM (শুধু Player-এর add করা ID এখানে থাকে)
--- ============================================================
-local CUSTOM_STORE_NAME = "CustomSongs_v1"
-local CUSTOM_STORE_KEY = "GlobalPlaylist"
-local MESSAGE_TOPIC = "CustomSongAdded_v1"
-local MAX_CUSTOM_SONGS = 500
-local ADD_COOLDOWN = 3
-local NAME_LENGTH = 8
+sound.Volume = volume
 
-local customStore = DataStoreService:GetDataStore(CUSTOM_STORE_NAME)
-
-local customSongs = {}      -- [idString] = { id = number, name = string }
-local customLoaded = false
-local pendingAdds = {}      -- [idString] = true (একই server-এ double add ঠেকাতে)
-local lastAddTime = {}      -- [userId] = os.clock()
-local lastRefresh = 0
-
-local function notify(player, message)
-	if NotificationModule and player and player.Parent and player:FindFirstChild("PlayerGui") then
-		NotificationModule.showNotification(player.PlayerGui, message)
-	end
+local function applyEqualizer()
+	equalizerEffect.LowGain = equalizer.Low
+	equalizerEffect.MidGain = equalizer.Mid
+	equalizerEffect.HighGain = equalizer.High
 end
-
--- Music Folder-এর existing/default sound কিনা চেক (এগুলো DataStore-এ কখনোই save হবে না)
-local function isBuiltInSound(instance)
-	return instance:IsA("Sound") and instance ~= currentSoundObject
-end
-
-local function isBuiltInId(idString)
-	for _, child in ipairs(musicFolder:GetChildren()) do
-		if isBuiltInSound(child) and string.match(child.SoundId, "%d+") == idString then
-			return true
-		end
-	end
-	return false
-end
-
-local function shortName(name)
-	name = tostring(name or "")
-	name = name:gsub("^%s+", ""):gsub("%s+$", "")
-
-	local len = utf8.len(name)
-	if len and len > NAME_LENGTH then
-		name = string.sub(name, 1, utf8.offset(name, NAME_LENGTH + 1) - 1)
-	elseif not len then
-		name = string.sub(name, 1, NAME_LENGTH)
-	end
-
-	if name == "" then
-		name = "Unknown"
-	end
-	return name
-end
-
-local function formatCustomName(entry)
-	return entry.name .. " - " .. tostring(entry.id)
-end
-
-local function toClientEntry(entry)
-	return { id = tostring(entry.id), display = formatCustomName(entry) }
-end
-
-local function getCustomListForClients()
-	local list = {}
-	for _, entry in pairs(customSongs) do
-		table.insert(list, toClientEntry(entry))
-	end
-	table.sort(list, function(a, b) return a.display < b.display end)
-	return list
-end
-
--- Cache-এ entry ঢোকায়। নতুন হলে true দেয়। Music Folder-এর ID হলে কখনো ঢোকে না।
-local function registerCustomSong(entry, broadcast)
-	if type(entry) ~= "table" or type(entry.id) ~= "number" or type(entry.name) ~= "string" then
-		return false
-	end
-
-	local key = tostring(entry.id)
-	if customSongs[key] or isBuiltInId(key) then
-		return false
-	end
-
-	customSongs[key] = { id = entry.id, name = entry.name }
-	if broadcast then
-		playMusicRemote:FireAllClients("SongAdded", toClientEntry(customSongs[key]))
-	end
-	return true
-end
-
-local function loadCustomSongs(broadcast)
-	local data
-	for attempt = 1, 3 do
-		local ok, result = pcall(function()
-			return customStore:GetAsync(CUSTOM_STORE_KEY)
-		end)
-		if ok then
-			data = result
-			break
-		end
-		warn("[Music] DataStore load failed (attempt " .. attempt .. "):", result)
-		task.wait(1)
-	end
-
-	if type(data) == "table" then
-		for _, entry in ipairs(data) do
-			registerCustomSong(entry, broadcast)
-		end
-	end
-end
-
--- UpdateAsync = server-to-server safe, একই ID দুইবার save হবে না
-local function saveCustomSong(song)
-	local existingEntry, addedEntry, limitReached
-
-	for attempt = 1, 3 do
-		existingEntry, addedEntry, limitReached = nil, nil, false
-
-		local ok, err = pcall(function()
-			customStore:UpdateAsync(CUSTOM_STORE_KEY, function(old)
-				existingEntry, addedEntry, limitReached = nil, nil, false
-				old = type(old) == "table" and old or {}
-
-				for _, entry in ipairs(old) do
-					if entry.id == song.id then
-						existingEntry = entry
-						return nil -- আগে থেকেই আছে, নতুন write নেই
-					end
-				end
-
-				if #old >= MAX_CUSTOM_SONGS then
-					limitReached = true
-					return nil
-				end
-
-				table.insert(old, { id = song.id, name = song.name })
-				addedEntry = song
-				return old
-			end)
-		end)
-
-		if ok then
-			return true, existingEntry, addedEntry, limitReached
-		end
-		warn("[Music] DataStore save failed (attempt " .. attempt .. "):", err)
-		task.wait(1)
-	end
-
-	return false
-end
-
-local function parseAssetId(raw)
-	if typeof(raw) ~= "string" and typeof(raw) ~= "number" then
-		return nil
-	end
-	local s = tostring(raw)
-	s = s:gsub("rbxassetid://", "")
-	s = s:gsub("%s", "")
-	if not string.match(s, "^%d+$") or #s > 15 then
-		return nil
-	end
-	local id = tonumber(s)
-	if not id or id <= 0 then
-		return nil
-	end
-	return id
-end
-
--- Startup load
-task.spawn(function()
-	loadCustomSongs(false)
-	customLoaded = true
-end)
-
--- অন্য server-এ কেউ add করলে এখানে live আসবে
-task.spawn(function()
-	local ok, err = pcall(function()
-		MessagingService:SubscribeAsync(MESSAGE_TOPIC, function(message)
-			registerCustomSong(message.Data, true)
-		end)
-	end)
-	if not ok then
-		warn("[Music] MessagingService subscribe failed:", err)
-	end
-end)
-
-addCustomMusicRemote.OnServerEvent:Connect(function(player, rawId)
-	local now = os.clock()
-	if lastAddTime[player.UserId] and now - lastAddTime[player.UserId] < ADD_COOLDOWN then
-		notify(player, "Please wait a few seconds before adding another song")
-		return
-	end
-	lastAddTime[player.UserId] = now
-
-	local id = parseAssetId(rawId)
-	if not id then
-		notify(player, "Invalid Sound ID")
-		return
-	end
-
-	local key = tostring(id)
-
-	-- Default/Music Folder song হলে কখনো save হবে না
-	if isBuiltInId(key) then
-		notify(player, "This song is already in the default playlist")
-		return
-	end
-
-	if customSongs[key] then
-		notify(player, "This song is already in the playlist")
-		return
-	end
-
-	if pendingAdds[key] then
-		return
-	end
-	pendingAdds[key] = true
-
-	-- Roblox থেকে real Name আনা
-	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfo(id, Enum.InfoType.Asset)
-	end)
-
-	if not ok or type(info) ~= "table" or info.AssetTypeId ~= 3 then
-		pendingAdds[key] = nil
-		notify(player, "Invalid or unavailable audio ID")
-		return
-	end
-
-	local song = { id = id, name = shortName(info.Name) }
-	local saved, existingEntry, addedEntry, limitReached = saveCustomSong(song)
-	pendingAdds[key] = nil
-
-	if not saved then
-		notify(player, "Could not save the song, try again later")
-		return
-	end
-
-	if limitReached then
-		notify(player, "Custom playlist is full")
-		return
-	end
-
-	if existingEntry then
-		-- অন্য server/player আগে save করেছে: existing entry-ই ব্যবহার হবে
-		registerCustomSong(existingEntry, true)
-		notify(player, "This song is already in the playlist")
-	elseif addedEntry then
-		registerCustomSong(addedEntry, true)
-		notify(player, "Song added: " .. formatCustomName(addedEntry))
-
-		pcall(function()
-			MessagingService:PublishAsync(MESSAGE_TOPIC, { id = addedEntry.id, name = addedEntry.name })
-		end)
-	end
-end)
-
--- ============================================================
-
-local equalizerState = {
-	SubBass = 0,
-	Bass = 0,
-	LowMid = 0,
-	Mid = 0,
-	HighMid = 0,
-	Treble = 0,
-	HighTreble = 0
-}
-
-local function applyEqualizerSettings()
-	local lowGain = (equalizerState["SubBass"] + equalizerState["Bass"]) / 2
-	local midGain = (equalizerState["LowMid"] + equalizerState["Mid"] + equalizerState["HighMid"]) / 3
-	local highGain = (equalizerState["Treble"] + equalizerState["HighTreble"]) / 2
-
-	equalizerEffect.LowGain = math.clamp(lowGain, -80, 10)
-	equalizerEffect.MidGain = math.clamp(midGain, -80, 10)
-	equalizerEffect.HighGain = math.clamp(highGain, -80, 10)
-end
+applyEqualizer()
 
 local function isAdmin(player)
-	if AdminModule and AdminModule.isAdmin then
-		return AdminModule.isAdmin(player)
-	end
-	return true
+	local ok, result = pcall(AdminModule.isAdmin, player)
+	return ok and result == true
 end
 
-local function getRequiredVotes()
-	local totalPlayers = #Players:GetPlayers()
-	if totalPlayers <= 1 then
-		return 1
-	end
-	return math.ceil(totalPlayers * 0.5)
-end
-
-local function updateSkipVotes()
-	local voteCount = 0
-	for userId, voted in pairs(skipVotes) do
-		if voted then voteCount = voteCount + 1 end
-	end
-
-	local req = getRequiredVotes()
-	skipVoteUpdateRemote:FireAllClients(voteCount, req)
-	return voteCount
-end
-
-local function resetSkipVotes()
-	skipVotes = {}
-	updateSkipVotes()
-end
-
--- Music Folder sound হলে সেটার Name, Custom হলে "Name - ID"
-local function getDisplayName(identifier)
-	identifier = tostring(identifier)
-
-	local folderSound = musicFolder:FindFirstChild(identifier)
-	if folderSound and isBuiltInSound(folderSound) then
-		return folderSound.Name
-	end
-
-	local entry = customSongs[identifier]
-	if entry then
-		return formatCustomName(entry)
-	end
-
-	return identifier
-end
-
--- Play/queue করা যাবে শুধু Music Folder sound অথবা saved Custom song
-local function isValidSongIdentifier(identifier)
-	if typeof(identifier) ~= "string" then
-		return false
-	end
-
-	local folderSound = musicFolder:FindFirstChild(identifier)
-	if folderSound and isBuiltInSound(folderSound) then
-		return true
-	end
-
-	return customSongs[identifier] ~= nil
-end
-
-local function getQueueDataForClients()
-	local clientQueue = {}
-	for _, item in ipairs(songQueue) do
-		table.insert(clientQueue, getDisplayName(item.soundName))
-	end
-	return clientQueue
-end
-
-local function countPlayerSongsInQueue(player)
+local function countVotes()
 	local count = 0
-	for _, item in ipairs(songQueue) do
-		if item.sender == player then
-			count = count + 1
+	for userId in pairs(skipVotes) do
+		if Players:GetPlayerByUserId(userId) then
+			count += 1
 		end
 	end
 	return count
 end
 
-local playNextInQueue
-
-local function playSong(soundIdentifier)
-	currentSoundObject:Stop()
-	currentSoundObject.TimePosition = 0
-
-	local soundToPlay = musicFolder:FindFirstChild(soundIdentifier)
-	local targetSoundId = nil
-
-	if soundToPlay and isBuiltInSound(soundToPlay) then
-		targetSoundId = soundToPlay.SoundId
-		currentSoundName = soundToPlay.Name
-	elseif customSongs[tostring(soundIdentifier)] then
-		local entry = customSongs[tostring(soundIdentifier)]
-		targetSoundId = "rbxassetid://" .. tostring(entry.id)
-		currentSoundName = formatCustomName(entry)
-	end
-
-	if targetSoundId then
-		currentSoundObject.SoundId = targetSoundId
-		currentSoundObject.Volume = globalVolume
-
-		-- 🔥 গান শুরু হওয়ার সাথে সাথেই বর্তমান Equalizer সেট করে দেওয়া হচ্ছে
-		applyEqualizerSettings()
-
-		task.wait(0.1)
-		currentSoundObject:Play()
-		isPlaying = true
-
-		resetSkipVotes()
-		playMusicRemote:FireAllClients("NowPlaying", currentSoundName)
-	else
-		playNextInQueue()
-	end
+local function votesNeeded()
+	return math.max(1, math.ceil(#Players:GetPlayers() * VOTE_SKIP_PERCENT))
 end
 
-playNextInQueue = function()
-	resetSkipVotes()
-
-	if #songQueue > 0 then
-		local nextItem = table.remove(songQueue, 1)
-		playMusicRemote:FireAllClients("QueueUpdate", getQueueDataForClients())
-		playSong(nextItem.soundName)
-	else
-		isPlaying = false
-		currentSoundName = nil
-		currentSoundObject:Stop()
-		currentSoundObject.SoundId = ""
-		stopMusicRemote:FireAllClients()
+local function buildState()
+	local queueList = {}
+	for _, entry in ipairs(queue) do
+		table.insert(queueList, { Name = entry.Name, Category = entry.Category, RequestedBy = entry.RequestedBy })
 	end
-end
-
-currentSoundObject.Ended:Connect(function()
-	if isPlaying then
-		playNextInQueue()
-	end
-end)
-
-playMusicRemote.OnServerEvent:Connect(function(player, soundIdentifier)
-	if not isValidSongIdentifier(soundIdentifier) then
-		return
-	end
-
-	if isPlaying then
-		local songsQueued = countPlayerSongsInQueue(player)
-		if songsQueued >= MAX_SONGS_PER_PLAYER then
-			if NotificationModule and player:FindFirstChild("PlayerGui") then
-				NotificationModule.showNotification(player.PlayerGui, "You can only add up to " .. MAX_SONGS_PER_PLAYER .. " songs!")
-			end
-			return
-		end
-
-		table.insert(songQueue, { soundName = soundIdentifier, sender = player })
-		playMusicRemote:FireAllClients("QueueUpdate", getQueueDataForClients())
-	else
-		playSong(soundIdentifier)
-	end
-end)
-
-setVolumeRemote.OnServerEvent:Connect(function(player, newVolume)
-	if not isAdmin(player) then return end
-	globalVolume = math.clamp(newVolume, 0, 1)
-	currentSoundObject.Volume = globalVolume
-	setVolumeRemote:FireAllClients(globalVolume)
-end)
-
-skipVoteRemote.OnServerEvent:Connect(function(player)
-	if not isPlaying then return end
-
-	if not skipVotes[player.UserId] then
-		skipVotes[player.UserId] = true
-	end
-
-	local voteCount = updateSkipVotes()
-	local required = getRequiredVotes()
-
-	if voteCount >= required or isAdmin(player) then
-		playNextInQueue()
-	end
-end)
-
-setEqualizerRemote.OnServerEvent:Connect(function(player, channel, value)
-	if not isAdmin(player) then return end
-	if equalizerState[channel] ~= nil then
-		equalizerState[channel] = value
-		applyEqualizerSettings() -- ইকুয়ালাইজার ইফেক্ট প্রয়োগ
-		setEqualizerRemote:FireAllClients(channel, value)
-	end
-end)
-
-getMusicStateRemote.OnServerInvoke = function(player)
-	-- DataStore load শেষ হওয়া পর্যন্ত অপেক্ষা (max ~10s)
-	local waited = 0
-	while not customLoaded and waited < 10 do
-		task.wait(0.2)
-		waited = waited + 0.2
-	end
-
 	return {
-		currentSoundName = currentSoundName,
-		isPlaying = isPlaying,
-		volume = globalVolume,
-		queue = getQueueDataForClients(),
-		skipVoteCount = updateSkipVotes(),
-		requiredVotes = getRequiredVotes(),
-		customSongs = getCustomListForClients()
+		Current = current and {
+			Name = current.Name,
+			Category = current.Category,
+			RequestedBy = current.RequestedBy,
+			PlayId = playToken, -- প্রতিবার নতুন গান শুরু হলে বদলায়
+		} or nil,
+		Queue = queueList,
+		Volume = volume,
+		Equalizer = equalizer,
+		Votes = countVotes(),
+		VotesNeeded = votesNeeded(),
+		AllowVoteSkip = ALLOW_VOTE_SKIP,
+		MaxSongsPerPlayer = MAX_SONGS_PER_PLAYER,
 	}
 end
 
-getEqualizerStateRemote.OnServerInvoke = function(player)
-	return equalizerState
+local function broadcast()
+	StateChanged:FireAllClients(buildState())
 end
 
-Players.PlayerAdded:Connect(function(player)
-	task.wait(0.5)
-	starRemote:FireClient(player)
-	updateSkipVotes()
-
-	-- Join-এর সময় DataStore থেকে নতুন Custom Song sync (30s throttle)
-	if customLoaded and os.clock() - lastRefresh > 30 then
-		lastRefresh = os.clock()
-		task.spawn(loadCustomSongs, true)
+local function notify(target, message, kind)
+	if target then
+		Notify:FireClient(target, message, kind)
+	else
+		Notify:FireAllClients(message, kind)
 	end
-end)
+end
 
-Players.PlayerRemoving:Connect(function(player)
-	lastAddTime[player.UserId] = nil
+---------------------------------------------------------------------
+-- বাজানো
+---------------------------------------------------------------------
+local playNext
 
-	if skipVotes[player.UserId] then
-		skipVotes[player.UserId] = nil
-	end
+local function playSong(entry)
+	playToken += 1
+	local token = playToken
 
-	for i = #songQueue, 1, -1 do
-		if songQueue[i].sender == player then
-			table.remove(songQueue, i)
+	current = entry
+	table.clear(skipVotes)
+	sound:Stop()
+	sound.SoundId = "rbxassetid://" .. entry.Id
+	sound.TimePosition = 0
+	sound.Volume = volume
+	broadcast()
+
+	local waited = 0
+	while not sound.IsLoaded and waited < LOAD_TIMEOUT do
+		waited += task.wait(0.2)
+		if token ~= playToken then
+			return -- এর মধ্যে অন্য গান শুরু হয়ে গেছে
 		end
 	end
-	playMusicRemote:FireAllClients("QueueUpdate", getQueueDataForClients())
 
-	local voteCount = updateSkipVotes()
-	if isPlaying and voteCount >= getRequiredVotes() then
-		playNextInQueue()
+	if not sound.IsLoaded then
+		warn(`[Music] গান লোড হয়নি: {entry.Name} ({entry.Id})`)
+		notify(nil, `Could not load "{entry.Name}", skipping`, "error")
+		playNext()
+		return
+	end
+
+	sound:Play()
+	notify(nil, `Now playing: {entry.Name}`, entry.Category)
+end
+
+playNext = function()
+	local nextEntry = table.remove(queue, 1)
+	if nextEntry then
+		task.spawn(playSong, nextEntry)
+	else
+		playToken += 1
+		current = nil
+		table.clear(skipVotes)
+		sound:Stop()
+		sound.SoundId = ""
+		broadcast()
+	end
+end
+
+sound.Ended:Connect(function()
+	if current then
+		playNext()
 	end
 end)
 
-for _, player in ipairs(Players:GetPlayers()) do
-	starRemote:FireClient(player)
+---------------------------------------------------------------------
+-- ক্লায়েন্টের অনুরোধ
+---------------------------------------------------------------------
+local function onCooldown(player)
+	local now = os.clock()
+	if lastRequest[player] and now - lastRequest[player] < REQUEST_COOLDOWN then
+		return true
+	end
+	lastRequest[player] = now
+	return false
 end
 
+-- RequestSong:FireServer(category, songId)
+RequestSong.OnServerEvent:Connect(function(player, category, songId)
+	if onCooldown(player) then
+		return
+	end
+	if type(category) ~= "string" or not songs[category] or type(songId) ~= "number" then
+		return
+	end
+	local song = songs[category][songId]
+	if not song then
+		return
+	end
 
--- গেম স্টার্ট হওয়ার সাথে সাথেই ডিফোল্ট Equalizer এপ্লাই করে রাখা
-applyEqualizerSettings()
+	local entry = {
+		Name = song.Name,
+		Id = song.Id,
+		Category = category,
+		RequestedBy = player.DisplayName,
+		UserId = player.UserId,
+	}
+
+	if not current then
+		task.spawn(playSong, entry)
+		return
+	end
+
+	local mine = 0
+	for _, queued in ipairs(queue) do
+		if queued.UserId == player.UserId then
+			mine += 1
+		end
+	end
+	if mine >= MAX_SONGS_PER_PLAYER then
+		notify(player, `You can only add up to {MAX_SONGS_PER_PLAYER} songs to the queue`, "error")
+		return
+	end
+
+	table.insert(queue, entry)
+	notify(player, `Added to queue (#{#queue}): {song.Name}`, category)
+	broadcast()
+end)
+
+SkipSong.OnServerEvent:Connect(function(player)
+	if onCooldown(player) or not current then
+		return
+	end
+
+	if isAdmin(player) then
+		notify(nil, `{player.DisplayName} skipped the song`, "info")
+		playNext()
+		return
+	end
+
+	if not ALLOW_VOTE_SKIP then
+		notify(player, "Only admins can skip songs", "error")
+		return
+	end
+
+	skipVotes[player.UserId] = true
+	if countVotes() >= votesNeeded() then
+		notify(nil, "Vote skip passed", "info")
+		playNext()
+	else
+		broadcast()
+	end
+end)
+
+-- SetVolume:FireServer(0..1)
+SetVolume.OnServerEvent:Connect(function(player, newVolume)
+	if not isAdmin(player) or type(newVolume) ~= "number" or newVolume ~= newVolume then
+		return
+	end
+	volume = math.clamp(newVolume, 0, 1)
+	sound.Volume = volume
+	broadcast()
+end)
+
+-- SetEqualizer:FireServer("Low" | "Mid" | "High", dB)
+SetEqualizer.OnServerEvent:Connect(function(player, band, value)
+	if not isAdmin(player) or equalizer[band] == nil or type(value) ~= "number" or value ~= value then
+		return
+	end
+	equalizer[band] = math.clamp(value, EQ_MIN, EQ_MAX)
+	applyEqualizer()
+	broadcast()
+end)
+
+GetState.OnServerInvoke = function()
+	return buildState()
+end
+
+Players.PlayerAdded:Connect(broadcast)
+
+Players.PlayerRemoving:Connect(function(player)
+	lastRequest[player] = nil
+	skipVotes[player.UserId] = nil
+	for index = #queue, 1, -1 do
+		if queue[index].UserId == player.UserId then
+			table.remove(queue, index)
+		end
+	end
+
+	task.defer(function()
+		if current and ALLOW_VOTE_SKIP and countVotes() > 0 and countVotes() >= votesNeeded() then
+			playNext()
+		else
+			broadcast()
+		end
+	end)
+end)
