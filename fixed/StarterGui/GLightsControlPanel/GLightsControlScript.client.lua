@@ -25,7 +25,8 @@ local contentContainer = mainFrame:WaitForChild("ContentContainer")
 local scrollFrame = contentContainer:WaitForChild("ContentScroll")
 
 local Remote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("GLightsRemote")
-local MusicHandler = workspace:WaitForChild("MusicFolder")
+-- MusicFolder দূরের Part, StreamingEnabled-এ শুরুতে না-ও থাকতে পারে;
+-- তাই এখানে WaitForChild না করে findCurrentPlayingSound প্রতিবার খুঁজে নেয়।
 
 local function findCurrentPlayingSound()
 	local musicHandler = workspace:FindFirstChild("MusicFolder")
@@ -39,8 +40,6 @@ local function findCurrentPlayingSound()
 	return nil
 end
 
-
-local music = findCurrentPlayingSound()
 
 local selectedLightType = "All"
 local isDragging = false

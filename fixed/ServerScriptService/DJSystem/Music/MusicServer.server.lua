@@ -92,12 +92,19 @@ local sound = musicFolder:FindFirstChild("DJSound")
 if not sound then
 	sound = Instance.new("Sound")
 	sound.Name = "DJSound"
-	sound.RollOffMinDistance = 10
-	sound.RollOffMaxDistance = 150
-	sound.RollOffMode = Enum.RollOffMode.Inverse
 	sound.Parent = musicFolder
 end
 sound.Looped = false
+
+-- গান কতদূর পর্যন্ত শোনা যাবে: MusicPlaylist-এর Settings থেকে, প্রতিবার সার্ভার চালু হলে
+local fullVolumeDistance = tonumber(Settings.FullVolumeDistance) or 10
+local maxHearDistance = tonumber(Settings.MaxHearDistance) or 150
+sound.RollOffMinDistance = math.max(0, fullVolumeDistance)
+sound.RollOffMaxDistance = math.max(sound.RollOffMinDistance + 1, maxHearDistance)
+local rollOffOk, rollOffMode = pcall(function()
+	return Enum.RollOffMode[Settings.RollOffMode or "Inverse"]
+end)
+sound.RollOffMode = if rollOffOk and rollOffMode then rollOffMode else Enum.RollOffMode.Inverse
 
 local equalizerEffect = sound:FindFirstChildOfClass("EqualizerSoundEffect")
 if not equalizerEffect then

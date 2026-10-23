@@ -27,6 +27,8 @@ MAP = {
     ("SPS", "DJSystem", "Controls", "QPyroControlPanel"): "StarterPlayerScripts/DJSystem/Controls/QPyroControlPanel.client.lua",
     ("SPS", "DJSystem", "Controls", "DJControlLock"): "StarterPlayerScripts/DJSystem/Controls/DJControlLock.client.lua",
     ("SPS", "DJSystem", "Music", "MusicUI"): "StarterPlayerScripts/DJSystem/Music/MusicUI.client.lua",
+    ("SPS", "DJSystem", "Visuals", "DisplayVisualizer"): "StarterPlayerScripts/DJSystem/Visuals/DisplayVisualizer.client.lua",
+    ("SPS", "DJSystem", "Visuals", "GifAnimator"): "StarterPlayerScripts/DJSystem/Visuals/GifAnimator.client.lua",
     ("RS", "DJSystem", "Modules", "MusicPlaylist"): "ReplicatedStorage/DJSystem/Modules/MusicPlaylist.lua",
     ("SGUI", "GLightsControlPanel", "GLightsControlScript"): "StarterGui/GLightsControlPanel/GLightsControlScript.client.lua",
     ("Ws", "QPyro", "Q-Tech Premium", "MainFolder", "MainScript"): "Workspace/QPyro/Q-Tech Premium/MainFolder/MainScript.server.lua",

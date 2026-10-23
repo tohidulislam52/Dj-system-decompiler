@@ -1067,13 +1067,14 @@ end)
 ---------------------------------------------------------------------
 -- ডিস্ক ঘোরানো আর সময়
 ---------------------------------------------------------------------
-local musicFolder = workspace:WaitForChild("MusicFolder")
+-- MusicFolder দূরের Part: StreamingEnabled-এ কাছে না গেলে থাকে না, তাই প্রতিবার খোঁজা
 local rotation = 0
 RunService.RenderStepped:Connect(function(deltaTime)
 	if not panel.Visible then
 		return
 	end
-	local djSound = musicFolder:FindFirstChild("DJSound")
+	local musicFolder = workspace:FindFirstChild("MusicFolder")
+	local djSound = musicFolder and musicFolder:FindFirstChild("DJSound")
 	local playing = state and state.Current and djSound and djSound.IsPlaying
 	if playing then
 		rotation = (rotation + 60 * deltaTime) % 360

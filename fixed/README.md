@@ -141,3 +141,29 @@ Custom ID চালু/বন্ধ (`AllowCustomIds`) বদলানো যা
 বাজে, নাহলে কিউতে যায়, আর এটাও প্রতি প্লেয়ারের কিউ-লিমিটের মধ্যে গোনা হয়।
 সার্ভার Roblox থেকে যাচাই করে এটা অডিও কি না, আর গানের নাম নিয়ে আসে। কিছুই সেভ
 হয় না। একজন প্রতি ৩ সেকেন্ডে একবার আইডি দিতে পারে।
+
+---
+
+## দূর থেকে ঢুকলে Display / MusicFolder না পাওয়া (StreamingEnabled)
+
+গেমে StreamingEnabled চালু থাকায় স্পন থেকে দূরের Part (Display, MusicFolder,
+Visuals-এর স্ক্রিন) প্লেয়ার কাছে না যাওয়া পর্যন্ত তার কম্পিউটারে থাকে না। এখন এই
+স্ক্রিপ্টগুলো জিনিসগুলো প্রতিবার খুঁজে নেয়, তাই দেরিতে এলে বা দূরে গিয়ে ফিরে এলেও
+কাজ করে:
+
+| স্ক্রিপ্ট | কোথায় |
+|---|---|
+| DisplayVisualizer | StarterPlayerScripts › DJSystem › Visuals |
+| GifAnimator | StarterPlayerScripts › DJSystem › Visuals |
+| GLightsControlScript | StarterGui › GLightsControlPanel |
+| MusicUI | StarterPlayerScripts › DJSystem › Music |
+
+## গান কতদূর পর্যন্ত শোনা যাবে
+
+MusicPlaylist-এর `Settings`-এ:
+- `FullVolumeDistance`: এই দূরত্বের ভেতরে পুরো আওয়াজ (স্টাড)
+- `MaxHearDistance`: এর বাইরে একদম শোনা যাবে না
+- `RollOffMode`: মাঝখানে আওয়াজ কীভাবে কমবে (`Inverse`, `Linear`, `LinearSquare`, `InverseTapered`)
+
+দূরত্ব মাপা হয় Workspace › MusicFolder Part থেকে। MusicServer প্রতিবার চালু হওয়ার সময়
+এগুলো DJSound-এ বসায়।
