@@ -1,6 +1,6 @@
 --[[
 	AdminModule — DJ সিস্টেমের Config (কে কন্ট্রোল করতে পারবে)
-	জায়গা: ReplicatedStorage > MusicModule > AdminModule (ModuleScript)
+	জায়গা: ReplicatedStorage > DJSystem > Modules > AdminModule (ModuleScript)
 
 	এখানে যাদের নাম/UserId দেবেন, শুধু তারাই পারবে:
 	  - GLights আর QPyro কন্ট্রোল প্যানেল (TopBar আইকন)

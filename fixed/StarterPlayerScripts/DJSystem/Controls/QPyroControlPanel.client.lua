@@ -1,5 +1,5 @@
 --[[
-	QPyroControlPanel — জায়গা: StarterPlayer > StarterPlayerScripts (LocalScript)
+	QPyroControlPanel — জায়গা: StarterPlayer > StarterPlayerScripts > DJSystem > Controls (LocalScript)
 
 	ফিক্স (ISSUES.md #1):
 	  আগে এই স্ক্রিপ্ট সার্ভারের প্রত্যেক প্লেয়ারের কাছে বাসের বিট ধরে আগুন
@@ -15,8 +15,8 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
-local QPyroRemote = ReplicatedStorage:WaitForChild("QPyroRemote")
-local PyroSyncRemote = ReplicatedStorage:WaitForChild("PyroSyncRemote")
+local QPyroRemote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("QPyroRemote")
+local PyroSyncRemote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("PyroSyncRemote")
 
 local playerGui = player:WaitForChild("PlayerGui")
 local screenGui = playerGui:WaitForChild("QPyroControlPanel")

@@ -1,5 +1,5 @@
 --[[
-	DJControlLock — জায়গা: StarterPlayer > StarterPlayerScripts (নতুন LocalScript)
+	DJControlLock — জায়গা: StarterPlayer > StarterPlayerScripts > DJSystem > Controls (LocalScript)
 
 	ফিক্স (ISSUES.md #2):
 	  Q-Tech টিভির বাটনগুলো (workspace.QPyro["Q-Tech Premium"]) সার্ভারের
@@ -15,7 +15,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AdminModule = require(ReplicatedStorage:WaitForChild("MusicModule"):WaitForChild("AdminModule"))
+local AdminModule = require(ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Modules"):WaitForChild("AdminModule"))
 
 local player = Players.LocalPlayer
 if AdminModule.isAdmin(player) then

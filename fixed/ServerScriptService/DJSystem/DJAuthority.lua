@@ -1,6 +1,6 @@
 --[[
 	DJAuthority — অনুমতি আর "কন্ডাক্টর" ব্যবস্থা
-	জায়গা: ServerScriptService > DJAuthority (ModuleScript)
+	জায়গা: ServerScriptService > DJSystem > DJAuthority (ModuleScript)
 	QPyroSyncServer আর GlightSyncServer দুটোই এটা require করে।
 
 	কন্ডাক্টর কী?
@@ -9,7 +9,13 @@
 	  তাই ১০ জন থাকলে প্রতিটা আগুন/লাইট কমান্ড ১০ বার আসত।
 	  এখন সার্ভার একজন প্লেয়ারকে "কন্ডাক্টর" বানায়। শুধু তার ক্লায়েন্ট
 	  অটো-শো চালায়, বাকিদের অটো-কমান্ড বাদ।
-	  প্রথমে অ্যাডমিন, অ্যাডমিন না থাকলে যে সবচেয়ে আগে ঢুকেছে।
+
+	কে কন্ডাক্টর হয়?
+	  স্পিকারের (workspace.MusicFolder Part) সবচেয়ে কাছের প্লেয়ার। গানটা 3D,
+	  তাই দূরে গেলে আওয়াজ কমে যায় আর বিট ধরা যায় না, আর কাছের জনই
+	  সবচেয়ে ভালো শোনে। দূরত্ব সমান হলে আগে অ্যাডমিন, তারপর যে আগে
+	  ঢুকেছে। কেউ একটু বেশি কাছে এলেই যেন বারবার বদল না হয়, তাই নতুন
+	  জন SWITCH_MARGIN স্টাড বেশি কাছে হলে তবেই বদলায়।
 
 	ক্লায়েন্টরা ReplicatedStorage-এর এই attribute-গুলো পড়ে:
 	  DJConductor  : কন্ডাক্টরের UserId (0 = কেউ না)
@@ -21,8 +27,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AdminModule = require(ReplicatedStorage:WaitForChild("MusicModule"):WaitForChild("AdminModule"))
-local PyroSyncRemote = ReplicatedStorage:WaitForChild("PyroSyncRemote")
+local AdminModule = require(ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Modules"):WaitForChild("AdminModule"))
+local PyroSyncRemote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("PyroSyncRemote")
 
 local DJAuthority = {}
 
@@ -43,6 +49,9 @@ local FLAG_COMMANDS = {
 -- গান বাজছে অথচ কন্ডাক্টর এত সেকেন্ড কিছু পাঠায়নি → পরের জনকে দেওয়া হয়
 -- (তার গেম আটকে গেলে বা ল্যাগ করলে শো যেন বন্ধ না থাকে)
 local SILENT_TIMEOUT = 15
+
+-- নতুন কেউ বর্তমান কন্ডাক্টরের চেয়ে এত স্টাড বেশি কাছে হলে তবেই বদল
+local SWITCH_MARGIN = 20
 
 local joinOrder = {} -- [player] = কত নম্বরে ঢুকেছে
 local joinCounter = 0
@@ -110,18 +119,54 @@ end
 ---------------------------------------------------------------------
 -- কন্ডাক্টর বাছাই
 ---------------------------------------------------------------------
+-- স্পিকার কোথায় (MusicFolder একটা Part, গান ওটার ভেতরে বাজে)
+local function getSpeakerPosition()
+	local musicFolder = workspace:FindFirstChild("MusicFolder")
+	if musicFolder and musicFolder:IsA("BasePart") then
+		return musicFolder.Position
+	end
+	return nil
+end
+
+-- চরিত্র না থাকলে (মারা গেছে / এখনো লোড হয়নি) অসীম দূরত্ব
+local function distanceToSpeaker(player, speakerPosition)
+	if not speakerPosition then
+		return math.huge
+	end
+	local character = player.Character
+	local root = character and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
+	if not root then
+		return math.huge
+	end
+	return (root.Position - speakerPosition).Magnitude
+end
+
 local function pickConductor()
-	local best, bestIsAdmin, bestOrder
+	local speakerPosition = getSpeakerPosition()
+	local best, bestDistance, bestIsAdmin, bestOrder
 	for _, player in ipairs(Players:GetPlayers()) do
 		if not skipped[player] then
+			local distance = distanceToSpeaker(player, speakerPosition)
 			local isAdmin = AdminModule.isAdmin(player)
 			local order = joinOrder[player] or math.huge
-			if best == nil or (isAdmin and not bestIsAdmin) or (isAdmin == bestIsAdmin and order < bestOrder) then
-				best, bestIsAdmin, bestOrder = player, isAdmin, order
+			local isBetter = best == nil
+				or distance < bestDistance
+				or (distance == bestDistance and isAdmin and not bestIsAdmin)
+				or (distance == bestDistance and isAdmin == bestIsAdmin and order < bestOrder)
+			if isBetter then
+				best, bestDistance, bestIsAdmin, bestOrder = player, distance, isAdmin, order
 			end
 		end
 	end
 	return best
+end
+
+local function setConductor(player)
+	if player ~= conductor then
+		conductor = player
+		lastAutoTime = os.clock()
+		ReplicatedStorage:SetAttribute(CONDUCTOR_ATTRIBUTE, conductor and conductor.UserId or 0)
+	end
 end
 
 local function refreshConductor()
@@ -130,11 +175,21 @@ local function refreshConductor()
 		table.clear(skipped)
 		nextConductor = pickConductor()
 	end
+	setConductor(nextConductor)
+end
 
-	if nextConductor ~= conductor then
-		conductor = nextConductor
-		lastAutoTime = os.clock()
-		ReplicatedStorage:SetAttribute(CONDUCTOR_ATTRIBUTE, conductor and conductor.UserId or 0)
+-- কেউ স্পিকারের অনেক বেশি কাছে থাকলে কন্ডাক্টর তাকে দেওয়া
+local function moveConductorCloser()
+	if not conductor then
+		refreshConductor()
+		return
+	end
+	local best = pickConductor()
+	if best and best ~= conductor then
+		local speakerPosition = getSpeakerPosition()
+		if distanceToSpeaker(best, speakerPosition) + SWITCH_MARGIN < distanceToSpeaker(conductor, speakerPosition) then
+			setConductor(best)
+		end
 	end
 end
 
@@ -176,10 +231,12 @@ Players.PlayerRemoving:Connect(function(player)
 	task.defer(refreshConductor)
 end)
 
--- Watchdog: কন্ডাক্টর চুপ থাকলে পরের জনকে দেওয়া
+-- Watchdog: প্রতি ২ সেকেন্ডে কাছের জনকে কন্ডাক্টর বানানো, আর কন্ডাক্টর
+-- চুপ থাকলে পরের জনকে দেওয়া
 task.spawn(function()
 	while true do
 		task.wait(2)
+		moveConductorCloser()
 		if not isMusicPlaying() then
 			lastAutoTime = os.clock()
 		elseif conductor and os.clock() - lastAutoTime > SILENT_TIMEOUT then

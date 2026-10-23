@@ -1,7 +1,7 @@
 -- জায়গা: workspace > QPyro > Q-Tech Premium > MainFolder > MainScript
 -- ফিক্স (ISSUES.md #2): টিভি চালু করতে পারবে শুধু AdminModule-এর অ্যাডমিন,
 -- আর চালু হয়ে গেলে আবার চাপলে কিছু হবে না (আগে Loading মুছে যাওয়ার পর error দিত)।
-local AdminModule = require(game:GetService("ReplicatedStorage"):WaitForChild("MusicModule"):WaitForChild("AdminModule"))
+local AdminModule = require(game:GetService("ReplicatedStorage"):WaitForChild("DJSystem"):WaitForChild("Modules"):WaitForChild("AdminModule"))
 
 local Main_Zone = script.Parent.Screen.Loading.MainZone
 local started = false
@@ -136,4 +136,3 @@ script.Parent.Button:WaitForChild("ClickDetector").MouseClick:Connect(function(p
 	wait(0.1)
 	script.Parent.Screen.MainGui.MainZone.D.Visible = true
 end)
-

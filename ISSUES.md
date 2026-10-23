@@ -39,8 +39,8 @@
    ২–৪ KB/s কোনো সমস্যা না।
 
 ### সমাধান (`fixed/` ফোল্ডারে)
-- **কন্ডাক্টর** (`ServerScriptService/DJAuthority`): সার্ভার একজনকে বাছাই
-  করে (প্রথমে অ্যাডমিন, না থাকলে যে সবচেয়ে আগে ঢুকেছে)। শুধু তার অটো-
+- **কন্ডাক্টর** (`ServerScriptService/DJSystem/DJAuthority`): সার্ভার একজনকে বাছাই
+  করে: স্পিকারের সবচেয়ে কাছের প্লেয়ার, কারণ গানটা 3D আর দূর থেকে বিট ধরা যায় না। শুধু তার অটো-
   কমান্ড নেওয়া হয়। সে চলে গেলে, বা গান চলার সময় ১৫ সেকেন্ড চুপ থাকলে,
   পরের জন দায়িত্ব নেয়।
 - অটো-আগুন সার্ভার নিজে 0.25 সেকেন্ড পর বন্ধ করে।
@@ -74,11 +74,11 @@
   প্যানেল লুকানো থাকলেও exploiter সরাসরি কমান্ড পাঠাতে পারে।
 - **GLights Reset বাটন:** `GlobalSettings`-এ `Whitelist.Enabled = false`।
 - গেমে আগে থেকেই একটা অ্যাডমিন লিস্ট ছিল
-  (`ReplicatedStorage/MusicModule/AdminModule`), কিন্তু সেটা শুধু ভলিউম,
+  (আগে `ReplicatedStorage/MusicModule/AdminModule`, এখন `ReplicatedStorage/DJSystem/Modules/AdminModule`), কিন্তু সেটা শুধু ভলিউম,
   ইকুয়ালাইজার আর TopBar আইকনে ব্যবহার হতো।
 
 ### সমাধান (`fixed/` ফোল্ডারে)
-- **Config একটাই:** `ReplicatedStorage/MusicModule/AdminModule`। নাম,
+- **Config একটাই:** `ReplicatedStorage/DJSystem/Modules/AdminModule`। নাম,
   UserId আর গেমের মালিক সেখানে দেওয়া যায়, বড়/ছোট হাতের অক্ষরে সমস্যা নেই।
 - `QPyroSyncServer` আর `GlightSyncServer` অ্যাডমিন ছাড়া কারো প্যানেলের
   কমান্ড নেয় না। কন্ডাক্টর শুধু নিরাপদ অটো-কমান্ড, মানের সীমার ভেতরে
@@ -103,6 +103,12 @@ exploiter নিজের ক্লায়েন্টে লকটা বন�
 #2-এর বাকি থাকা ঝুঁকি দূর করতে। টিভির A/B/C/D জোনের সব বাটন একটা
 LocalScript থেকে RemoteEvent-এ পাঠাবে, আর সার্ভার অ্যাডমিন চেক করে
 ইফেক্ট চালাবে। কাজটা বড় (~৯০টা Script), তাই আলাদা করে রাখা হলো।
+
+## #5 — স্ক্রিপ্টগুলো ফোল্ডারে সাজানো 🔵
+
+ReplicatedStorage, ServerScriptService আর StarterPlayerScripts-এ সবকিছু
+এখন `DJSystem` ফোল্ডারে সাজানো (`fixed/README.md` দেখুন)। যে ১৪টা স্ক্রিপ্ট
+এগুলো খোঁজে, তাদের সবার পাথ বদলানো হয়েছে।
 
 ## #4 — দূরের প্লেয়ারদের Recv আরও কমানো (ঐচ্ছিক) 🔴
 

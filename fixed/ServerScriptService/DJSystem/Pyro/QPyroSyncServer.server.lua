@@ -5,7 +5,7 @@
 	কোড বাদ দেওয়া হয়েছে, কারণ ওটা স্ক্রিপ্টের কাজের অংশ না।
 
 	ধরন: Server Script (OnServerEvent ব্যবহার করে)
-	জায়গা: ServerScriptService > QPyroSyncServer
+	জায়গা: ServerScriptService > DJSystem > Pyro > QPyroSyncServer
 
 	ফিক্স (ISSUES.md #1, #2):
 	  - হাতে চাপা কমান্ড শুধু AdminModule-এর অ্যাডমিনদের কাছ থেকে নেওয়া হয়
@@ -37,8 +37,8 @@ print("Sistem QPyro Berhasil Dijalankan!")                  -- "QPyro সিস�
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
-local Remote = ReplicatedStorage:WaitForChild("QPyroRemote")
-local DJAuthority = require(ServerScriptService:WaitForChild("DJAuthority"))
+local Remote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("QPyroRemote")
+local DJAuthority = require(ServerScriptService:WaitForChild("DJSystem"):WaitForChild("DJAuthority"))
 
 ---------------------------------------------------------------------
 -- ২) Helper-গুলো

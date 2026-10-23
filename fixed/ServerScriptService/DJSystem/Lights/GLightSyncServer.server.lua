@@ -5,7 +5,7 @@
 	কোড ("Tamper Detected!" চেক) বাদ দেওয়া হয়েছে, কারণ ওটা স্ক্রিপ্টের কাজের অংশ না।
 
 	ধরন: Server Script (OnServerEvent ব্যবহার করে)
-	জায়গা: ServerScriptService > GlightSyncServer
+	জায়গা: ServerScriptService > DJSystem > Lights > GLightSyncServer
 
 	ফিক্স (ISSUES.md #1, #2):
 	  - প্যানেলের কমান্ড শুধু AdminModule-এর অ্যাডমিনদের কাছ থেকে নেওয়া হয়
@@ -41,8 +41,8 @@ print("Sistem Glight Berhasil Dijalankan!")                 -- "Glight সিস
 ---------------------------------------------------------------------
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
-local Remote = ReplicatedStorage:WaitForChild("GLightsRemote")
-local DJAuthority = require(ServerScriptService:WaitForChild("DJAuthority"))
+local Remote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("GLightsRemote")
+local DJAuthority = require(ServerScriptService:WaitForChild("DJSystem"):WaitForChild("DJAuthority"))
 local GLights = game.Workspace:WaitForChild("GLights")
 local Panel = require(GLights.Scripts.Panels.Panel)
 local Lights = GLights:WaitForChild("Lights")

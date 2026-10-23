@@ -24,7 +24,7 @@ local tabContainer = mainFrame:WaitForChild("TabContainer")
 local contentContainer = mainFrame:WaitForChild("ContentContainer")
 local scrollFrame = contentContainer:WaitForChild("ContentScroll")
 
-local Remote = ReplicatedStorage:WaitForChild("GLightsRemote")
+local Remote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("GLightsRemote")
 local MusicHandler = workspace:WaitForChild("MusicFolder")
 
 local function findCurrentPlayingSound()
@@ -53,7 +53,7 @@ local currentAutoCue = nil
 local autoCueInterval = 5 -- detik pergantian antar cue
 
 -- PyroSyncRemote-ই অটো-মোডের সব flag বদলায় (DJAuthority দেখুন)
-local AutoModeRemote = ReplicatedStorage:WaitForChild("PyroSyncRemote")
+local AutoModeRemote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("PyroSyncRemote")
 
 -- এই ক্লায়েন্ট কি এখন অটো-শো চালাবে?
 local function isConductor()
@@ -125,7 +125,7 @@ if allLightsSection then
 end
 
 -- ==================== HELPER FUNCTION TO SEND COMMAND (CLIENT) ====================
-local Remote = ReplicatedStorage:WaitForChild("GLightsRemote")
+local Remote = ReplicatedStorage:WaitForChild("DJSystem"):WaitForChild("Remotes"):WaitForChild("GLightsRemote")
 
 local function sendCommand(action, ...)
 	local args = {...}

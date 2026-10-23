@@ -1,6 +1,6 @@
 -- AdminModule-এর নাম আর UserId থেকে GLights-এর whitelist বানানো
 local function getAdminWhitelist()
-	local AdminModule = require(game:GetService("ReplicatedStorage"):WaitForChild("MusicModule"):WaitForChild("AdminModule"))
+	local AdminModule = require(game:GetService("ReplicatedStorage"):WaitForChild("DJSystem"):WaitForChild("Modules"):WaitForChild("AdminModule"))
 	local list = {}
 	for _, name in ipairs(AdminModule.ADMIN_LIST) do
 		table.insert(list, name)
@@ -32,7 +32,7 @@ return {
 	--			List = { "gabys2005", "idezye", { Group = 32780278, Ranks = { "Staff", "Owner" } }
 	--		},
 	-- ফিক্স (ISSUES.md #2): Reset বাটন শুধু AdminModule-এর অ্যাডমিনদের জন্য।
-	-- নাম এখানে না, ReplicatedStorage > MusicModule > AdminModule-এ লিখুন।
+	-- নাম এখানে না, ReplicatedStorage > DJSystem > Modules > AdminModule-এ লিখুন।
 	Whitelist = {
 		Enabled = true,
 		List = getAdminWhitelist(),
