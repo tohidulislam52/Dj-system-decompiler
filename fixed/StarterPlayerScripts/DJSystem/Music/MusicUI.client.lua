@@ -6,7 +6,8 @@
 	  - "MusicPrompt" ProximityPrompt চাপলে প্যানেল খোলে/বন্ধ হয় (আগের মতো),
 	    উপরের ডান কোণের X বাটনেও বন্ধ হয়
 	  - বাম পাশে: এখন কোন গান বাজছে, সময়, ভলিউম, স্কিপ
-	  - ডান পাশে ট্যাব: DJ, PHONK, QUEUE, আর শুধু অ্যাডমিনের জন্য EQ
+	  - ডান পাশে ট্যাব: DJ, PHONK, CUSTOM (নিজে আইডি দিয়ে গান), QUEUE,
+	    আর শুধু অ্যাডমিনের জন্য EQ
 	  - গানের লিস্ট আসে ReplicatedStorage > DJSystem > Modules > MusicPlaylist থেকে
 ]]
 
@@ -29,6 +30,7 @@ local Settings = Playlist.Settings or {}
 local musicRemotes = djSystem:WaitForChild("Remotes"):WaitForChild("Music")
 local GetState = musicRemotes:WaitForChild("GetState")
 local RequestSong = musicRemotes:WaitForChild("RequestSong")
+local RequestCustom = musicRemotes:WaitForChild("RequestCustom")
 local SkipSong = musicRemotes:WaitForChild("SkipSong")
 local SetVolume = musicRemotes:WaitForChild("SetVolume")
 local SetEqualizer = musicRemotes:WaitForChild("SetEqualizer")
@@ -52,13 +54,14 @@ local COLORS = {
 	DJ = Color3.fromRGB(0, 200, 255),
 	Phonk = Color3.fromRGB(255, 60, 120),
 	Queue = Color3.fromRGB(255, 190, 60),
+	Custom = Color3.fromRGB(70, 220, 160),
 	EQ = Color3.fromRGB(150, 110, 255),
 }
 local FONT_BOLD = Enum.Font.GothamBold
 local FONT = Enum.Font.GothamMedium
 local DISC_IMAGE = "rbxassetid://93391259236497"
 
-local CATEGORY_LABEL = { DJ = "DJ", Phonk = "PHONK" }
+local CATEGORY_LABEL = { DJ = "DJ", Phonk = "PHONK", Custom = "CUSTOM" }
 
 ---------------------------------------------------------------------
 -- ছোট helper
@@ -394,11 +397,16 @@ local tabBar = create("Frame", {
 	}),
 })
 
-local TABS = { "DJ", "Phonk", "Queue" }
+local allowCustomIds = Settings.AllowCustomIds ~= false
+local TABS = { "DJ", "Phonk" }
+if allowCustomIds then
+	table.insert(TABS, "Custom")
+end
+table.insert(TABS, "Queue")
 if isAdmin then
 	table.insert(TABS, "EQ")
 end
-local TAB_TEXT = { DJ = "DJ", Phonk = "PHONK", Queue = "QUEUE", EQ = "EQ" }
+local TAB_TEXT = { DJ = "DJ", Phonk = "PHONK", Custom = "CUSTOM", Queue = "QUEUE", EQ = "EQ" }
 local tabWidth = (1 - 0.015 * (#TABS - 1)) / #TABS
 local tabButtons = {}
 for index, tabName in ipairs(TABS) do
@@ -564,6 +572,104 @@ end
 searchBox:GetPropertyChangedSignal("Text"):Connect(applySearch)
 
 ---------------------------------------------------------------------
+-- CUSTOM: প্লেয়ার নিজে অডিও আইডি দিয়ে বাইরের গান বাজায় / কিউতে দেয়
+---------------------------------------------------------------------
+local customPanel = create("Frame", {
+	Name = "CustomPanel",
+	BackgroundColor3 = COLORS.Panel,
+	Position = UDim2.fromScale(0, 0.12),
+	Size = UDim2.fromScale(1, 0.88),
+	Visible = false,
+	Parent = right,
+}, { corner(UDim.new(0, 10)), stroke() })
+
+label({
+	Text = "PLAY ANY AUDIO ID",
+	Font = FONT_BOLD,
+	TextColor3 = COLORS.Custom,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromScale(0.05, 0.07),
+	Size = UDim2.fromScale(0.9, 0.1),
+	MaxTextSize = 20,
+}).Parent = customPanel
+label({
+	Text = "Paste a Roblox audio ID. It plays now, or goes to the queue.",
+	TextColor3 = COLORS.SubText,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromScale(0.05, 0.19),
+	Size = UDim2.fromScale(0.9, 0.08),
+	MaxTextSize = 14,
+}).Parent = customPanel
+
+local customIdBox = create("TextBox", {
+	Name = "AudioId",
+	BackgroundColor3 = COLORS.PanelLight,
+	ClearTextOnFocus = false,
+	Font = FONT_BOLD,
+	PlaceholderText = "Enter audio ID...",
+	PlaceholderColor3 = COLORS.SubText,
+	Text = "",
+	TextColor3 = COLORS.Text,
+	TextScaled = true,
+	Position = UDim2.fromScale(0.08, 0.33),
+	Size = UDim2.fromScale(0.84, 0.15),
+	Parent = customPanel,
+}, {
+	corner(UDim.new(0, 8)),
+	stroke(COLORS.Custom, 1, 0.3),
+	textLimit(20),
+	create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
+})
+
+local customPlayButton = button({
+	Name = "PlayCustom",
+	Text = "▶  PLAY / ADD TO QUEUE",
+	Color = COLORS.Custom,
+	TextColor3 = COLORS.Background,
+	Position = UDim2.fromScale(0.08, 0.54),
+	Size = UDim2.fromScale(0.84, 0.15),
+	MaxTextSize = 18,
+})
+customPlayButton.Parent = customPanel
+
+label({
+	Text = "The audio must be public or allowed in this game.",
+	TextColor3 = COLORS.SubText,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromScale(0.05, 0.77),
+	Size = UDim2.fromScale(0.9, 0.07),
+	MaxTextSize = 13,
+}).Parent = customPanel
+
+-- শুধু সংখ্যা রাখা (rbxassetid:// পেস্ট করলেও চলে)
+customIdBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local digits = string.gsub(customIdBox.Text, "%D", "")
+	if digits ~= customIdBox.Text then
+		customIdBox.Text = digits
+	end
+end)
+
+local lastCustomTime = -math.huge
+local function submitCustom()
+	local id = customIdBox.Text
+	if id == "" then
+		return
+	end
+	if os.clock() - lastCustomTime < 1 then
+		return
+	end
+	lastCustomTime = os.clock()
+	RequestCustom:FireServer(id)
+	customIdBox.Text = ""
+end
+customPlayButton.Activated:Connect(submitCustom)
+customIdBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		submitCustom()
+	end
+end)
+
+---------------------------------------------------------------------
 -- EQ (শুধু অ্যাডমিন): Low / Mid / High, মাউস আর টাচ দুটোতেই চলে
 ---------------------------------------------------------------------
 local EQ_MIN, EQ_MAX = -60, 10
@@ -689,6 +795,7 @@ local function selectTab(tabName)
 	songLists.DJ.Visible = tabName == "DJ"
 	songLists.Phonk.Visible = tabName == "Phonk"
 	queueList.Visible = tabName == "Queue"
+	customPanel.Visible = tabName == "Custom"
 	eqPanel.Visible = tabName == "EQ"
 	searchBox.Visible = tabName == "DJ" or tabName == "Phonk"
 end
@@ -782,7 +889,7 @@ local function renderQueue()
 	end
 	local entries = state and state.Queue or {}
 	if #entries == 0 then
-		emptyRow(queueList, "Queue is empty — pick a song from DJ or PHONK")
+		emptyRow(queueList, "Queue is empty — pick a song or add an ID")
 		return
 	end
 	for index, entry in ipairs(entries) do

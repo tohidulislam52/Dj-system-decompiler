@@ -8,6 +8,9 @@
 	    একজন সর্বোচ্চ Settings.MaxSongsPerPlayer-টা গান রাখতে পারে।
 	  - ভলিউম আর ইকুয়ালাইজার শুধু অ্যাডমিন (AdminModule)।
 	  - স্কিপ: অ্যাডমিন চাপলে সাথে সাথে, অন্যরা ভোট দিয়ে (Settings.AllowVoteSkip)।
+	  - Custom ID: প্লেয়ার নিজে অডিও আইডি দিয়ে বাইরের গান বাজাতে বা কিউতে
+	    দিতে পারে (Settings.AllowCustomIds)। সার্ভার Roblox থেকে যাচাই করে
+	    এটা অডিও কি না আর নামটা নিয়ে আসে। কিছুই সেভ হয় না।
 	  - গান বাজে workspace.MusicFolder-এর "DJSound"-এ, আগের মতোই। লাইট আর
 	    আগুনের সিঙ্ক এই সাউন্ড থেকেই বিট ধরে।
 	  - দরকারি RemoteEvent-গুলো এই স্ক্রিপ্ট নিজেই বানায়
@@ -15,6 +18,7 @@
 ]]
 
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -30,6 +34,9 @@ local ALLOW_VOTE_SKIP = Settings.AllowVoteSkip ~= false
 local VOTE_SKIP_PERCENT = Settings.VoteSkipPercent or 0.5
 local LOAD_TIMEOUT = 10 -- এত সেকেন্ডে গান লোড না হলে পরের গান
 local REQUEST_COOLDOWN = 0.5
+local ALLOW_CUSTOM_IDS = Settings.AllowCustomIds ~= false
+local CUSTOM_COOLDOWN = 3 -- একজন কত সেকেন্ড পরপর Custom ID দিতে পারবে
+local AUDIO_ASSET_TYPE = 3
 local EQ_MIN, EQ_MAX = -60, 10
 
 ---------------------------------------------------------------------
@@ -55,6 +62,7 @@ end
 
 local GetState = getRemote("RemoteFunction", "GetState")
 local RequestSong = getRemote("RemoteEvent", "RequestSong")
+local RequestCustom = getRemote("RemoteEvent", "RequestCustom")
 local SkipSong = getRemote("RemoteEvent", "SkipSong")
 local SetVolume = getRemote("RemoteEvent", "SetVolume")
 local SetEqualizer = getRemote("RemoteEvent", "SetEqualizer")
@@ -108,6 +116,8 @@ local equalizer = { Low = 0, Mid = 0, High = 0 }
 local skipVotes = {} -- [userId] = true
 local playToken = 0
 local lastRequest = {} -- [player] = os.clock()
+local lastCustom = {} -- [player] = os.clock()
+local customPending = {} -- [player] = true, আইডি যাচাই চলছে
 
 sound.Volume = volume
 
@@ -155,6 +165,7 @@ local function buildState()
 		Votes = countVotes(),
 		VotesNeeded = votesNeeded(),
 		AllowVoteSkip = ALLOW_VOTE_SKIP,
+		AllowCustomIds = ALLOW_CUSTOM_IDS,
 		MaxSongsPerPlayer = MAX_SONGS_PER_PLAYER,
 	}
 end
@@ -239,27 +250,8 @@ local function onCooldown(player)
 	return false
 end
 
--- RequestSong:FireServer(category, songId)
-RequestSong.OnServerEvent:Connect(function(player, category, songId)
-	if onCooldown(player) then
-		return
-	end
-	if type(category) ~= "string" or not songs[category] or type(songId) ~= "number" then
-		return
-	end
-	local song = songs[category][songId]
-	if not song then
-		return
-	end
-
-	local entry = {
-		Name = song.Name,
-		Id = song.Id,
-		Category = category,
-		RequestedBy = player.DisplayName,
-		UserId = player.UserId,
-	}
-
+-- কিছু না বাজলে সাথে সাথে বাজায়, নাহলে কিউতে দেয় (প্রতি প্লেয়ারের লিমিট মেনে)
+local function playOrQueue(player, entry)
 	if not current then
 		task.spawn(playSong, entry)
 		return
@@ -277,8 +269,92 @@ RequestSong.OnServerEvent:Connect(function(player, category, songId)
 	end
 
 	table.insert(queue, entry)
-	notify(player, `Added to queue (#{#queue}): {song.Name}`, category)
+	notify(player, `Added to queue (#{#queue}): {entry.Name}`, entry.Category)
 	broadcast()
+end
+
+-- RequestSong:FireServer(category, songId)
+RequestSong.OnServerEvent:Connect(function(player, category, songId)
+	if onCooldown(player) then
+		return
+	end
+	if type(category) ~= "string" or not songs[category] or type(songId) ~= "number" then
+		return
+	end
+	local song = songs[category][songId]
+	if not song then
+		return
+	end
+
+	playOrQueue(player, {
+		Name = song.Name,
+		Id = song.Id,
+		Category = category,
+		RequestedBy = player.DisplayName,
+		UserId = player.UserId,
+	})
+end)
+
+-- "rbxassetid://123", " 123 " বা 123 → 123; ভুল হলে nil
+local function parseAudioId(raw)
+	if type(raw) ~= "string" and type(raw) ~= "number" then
+		return nil
+	end
+	local text = string.gsub(string.gsub(tostring(raw), "rbxassetid://", ""), "%s", "")
+	if not string.match(text, "^%d+$") or #text > 15 then
+		return nil
+	end
+	local id = tonumber(text)
+	if not id or id <= 0 then
+		return nil
+	end
+	return id
+end
+
+-- RequestCustom:FireServer(audioId)
+RequestCustom.OnServerEvent:Connect(function(player, rawId)
+	if not ALLOW_CUSTOM_IDS or customPending[player] then
+		return
+	end
+	local now = os.clock()
+	if lastCustom[player] and now - lastCustom[player] < CUSTOM_COOLDOWN then
+		notify(player, "Please wait a few seconds before adding another ID", "error")
+		return
+	end
+	lastCustom[player] = now
+
+	local id = parseAudioId(rawId)
+	if not id then
+		notify(player, "Invalid Sound ID", "error")
+		return
+	end
+
+	customPending[player] = true
+	local ok, info = pcall(function()
+		return MarketplaceService:GetProductInfo(id, Enum.InfoType.Asset)
+	end)
+	customPending[player] = nil
+	if not player.Parent then
+		return -- যাচাইয়ের মধ্যে প্লেয়ার চলে গেছে
+	end
+
+	if not ok or type(info) ~= "table" or info.AssetTypeId ~= AUDIO_ASSET_TYPE then
+		notify(player, "That ID is not an available audio", "error")
+		return
+	end
+
+	local name = type(info.Name) == "string" and info.Name ~= "" and info.Name or ("Audio " .. id)
+	if utf8.len(name) and utf8.len(name) > 40 then
+		name = string.sub(name, 1, utf8.offset(name, 41) - 1)
+	end
+
+	playOrQueue(player, {
+		Name = name,
+		Id = id,
+		Category = "Custom",
+		RequestedBy = player.DisplayName,
+		UserId = player.UserId,
+	})
 end)
 
 SkipSong.OnServerEvent:Connect(function(player)
@@ -334,6 +410,8 @@ Players.PlayerAdded:Connect(broadcast)
 
 Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player] = nil
+	lastCustom[player] = nil
+	customPending[player] = nil
 	skipVotes[player.UserId] = nil
 	for index = #queue, 1, -1 do
 		if queue[index].UserId == player.UserId then
