@@ -60,8 +60,8 @@ return {
 	--			Enabled = true,
 	--			List = { "gabys2005", "idezye", { Group = 32780278, Ranks = { "Staff", "Owner" } }
 	--		},
-	-- ফিক্স (ISSUES.md #2): Reset বাটন শুধু AdminModule-এর অ্যাডমিনদের জন্য।
-	-- নাম এখানে না, ReplicatedStorage > DJSystem > Modules > AdminModule-এ লিখুন।
+	-- ফিক্স (ISSUES.md #2): Reset বাটন শুধু অ্যাডমিনদের জন্য।
+	-- নাম/আইডি এই ফাইলের একদম উপরের ADMIN_NAMES / ADMIN_USER_IDS-এ লিখুন।
 	Whitelist = {
 		Enabled = true,
 		List = getAdminWhitelist(),
