@@ -1,16 +1,45 @@
--- AdminModule-এর নাম আর UserId থেকে GLights-এর whitelist বানানো
+-- ===================== Reset বাটনের অ্যাডমিন =====================
+-- GLights ফোল্ডারে Sandbox চালু থাকলে এটা ReplicatedStorage-এর
+-- AdminModule পড়তে পারে না, তাই এখানেও নাম/UserId লেখা যায়।
+local ADMIN_USER_IDS = {
+	-- 12345678,
+}
+local ADMIN_NAMES = {
+	"Rojin00110",
+	"Tajim_294",
+}
+
+-- এখানকার লিস্ট + (পড়া গেলে) AdminModule-এর লিস্ট + গেমের মালিক
 local function getAdminWhitelist()
-	local AdminModule = require(game:GetService("ReplicatedStorage"):WaitForChild("DJSystem"):WaitForChild("Modules"):WaitForChild("AdminModule"))
 	local list = {}
-	for _, name in ipairs(AdminModule.ADMIN_LIST) do
+	for _, name in ipairs(ADMIN_NAMES) do
 		table.insert(list, name)
 	end
-	for _, userId in ipairs(AdminModule.ADMIN_USER_IDS or {}) do
+	for _, userId in ipairs(ADMIN_USER_IDS) do
 		table.insert(list, userId)
 	end
-	if AdminModule.ALLOW_OWNER and game.CreatorType == Enum.CreatorType.User then
-		table.insert(list, game.CreatorId)
-	end
+
+	pcall(function()
+		local djSystem = game:GetService("ReplicatedStorage"):FindFirstChild("DJSystem")
+		local modules = djSystem and djSystem:FindFirstChild("Modules")
+		local module = modules and modules:FindFirstChild("AdminModule")
+		if not module then
+			return
+		end
+		local AdminModule = require(module)
+		for _, name in ipairs(AdminModule.ADMIN_LIST or {}) do
+			table.insert(list, name)
+		end
+		for _, userId in ipairs(AdminModule.ADMIN_USER_IDS or {}) do
+			table.insert(list, userId)
+		end
+	end)
+
+	pcall(function()
+		if game.CreatorType == Enum.CreatorType.User then
+			table.insert(list, game.CreatorId)
+		end
+	end)
 	return list
 end
 

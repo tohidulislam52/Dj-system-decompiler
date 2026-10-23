@@ -1,13 +1,63 @@
 -- জায়গা: workspace > QPyro > Q-Tech Premium > MainFolder > MainScript
--- ফিক্স (ISSUES.md #2): টিভি চালু করতে পারবে শুধু AdminModule-এর অ্যাডমিন,
+-- ফিক্স (ISSUES.md #2): টিভি চালু করতে পারবে শুধু অ্যাডমিন,
 -- আর চালু হয়ে গেলে আবার চাপলে কিছু হবে না (আগে Loading মুছে যাওয়ার পর error দিত)।
-local AdminModule = require(game:GetService("ReplicatedStorage"):WaitForChild("DJSystem"):WaitForChild("Modules"):WaitForChild("AdminModule"))
+
+-- ===================== এই টিভির অ্যাডমিন =====================
+-- এই মডেলে Sandbox চালু থাকলে স্ক্রিপ্টটা ReplicatedStorage-এর
+-- AdminModule পড়তে পারে না, তাই টিভির অ্যাডমিন এখানে লিখুন।
+-- (গেমের মালিক সবসময় অ্যাডমিন।)
+local ADMIN_USER_IDS = {
+	-- 12345678,
+}
+local ADMIN_NAMES = {
+	"Rojin00110",
+	"Tajim_294",
+}
+
+-- Sandbox বন্ধ থাকলে AdminModule-এর লিস্টও মানা হবে; চালু থাকলে চুপচাপ বাদ
+local AdminModule = nil
+pcall(function()
+	local djSystem = game:GetService("ReplicatedStorage"):FindFirstChild("DJSystem")
+	local modules = djSystem and djSystem:FindFirstChild("Modules")
+	local module = modules and modules:FindFirstChild("AdminModule")
+	if module then
+		AdminModule = require(module)
+	end
+end)
+
+local function isAdmin(player)
+	local ok, isOwner = pcall(function()
+		return game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId
+	end)
+	if ok and isOwner then
+		return true
+	end
+
+	if table.find(ADMIN_USER_IDS, player.UserId) then
+		return true
+	end
+
+	local playerName = string.lower(player.Name)
+	for _, adminName in ipairs(ADMIN_NAMES) do
+		if playerName == string.lower(adminName) then
+			return true
+		end
+	end
+
+	if AdminModule then
+		local moduleOk, result = pcall(AdminModule.isAdmin, player)
+		if moduleOk and result then
+			return true
+		end
+	end
+	return false
+end
 
 local Main_Zone = script.Parent.Screen.Loading.MainZone
 local started = false
 
 script.Parent.Button:WaitForChild("ClickDetector").MouseClick:Connect(function(player)
-	if started or not AdminModule.isAdmin(player) then
+	if started or not isAdmin(player) then
 		return
 	end
 	started = true
